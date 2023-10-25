@@ -1,0 +1,37 @@
+/*
+
+*/
+#define EmergStopButton 2
+#define ResetButton 4
+#define EmergStopStatus 8 
+
+int EmergStopButtonState = 0;      // hold states in value
+int ResetButtonState = 0;      
+bool EmergStopActive = false;
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(EmergStopButton, INPUT);
+  pinMode(ResetButton, INPUT);
+  pinMode(EmergStopStatus, OUTPUT);
+}
+
+void loop() {
+  EmergStopButtonState = digitalRead(EmergStopButton);
+  ResetButtonState = digitalRead(ResetButton);
+
+  // eStop pressed ONCE
+  if (EmergStopButtonState == HIGH && !EmergStopActive) {
+    digitalWrite(eStopStatus, HIGH); 
+    EmergStopActive = true;
+    Serial.println("EmergSTOP ON");
+  }
+
+  // check for both buttons, turn off LED
+  if (EmergStopButtonState == HIGH && ResetButtonState == HIGH) {
+    digitalWrite(EmergStopStatus, LOW); 
+    EmergStopActive = false;
+    Serial.println("EmergSTOP OFF");
+    delay(100); //debounce
+  }
+}
