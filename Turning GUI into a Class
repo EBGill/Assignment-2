@@ -1,0 +1,9 @@
+% Create an instance of the A2_GUI app
+app = A2_GUI();
+
+% Start the app
+waitfor(app);
+
+% Add the rest of your main script code here
+% For example:
+% disp('Main script continues...');
