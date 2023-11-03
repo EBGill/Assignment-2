@@ -29,7 +29,7 @@ hold on
 
 axis tight
 
-% Fence
+
 
 % Fence
 
@@ -141,17 +141,16 @@ WarningSignal_4 = PlaceObject('WarningSignals.ply', [-3.4,-1.4,0.433]);
 
 
 
-kukabasetrans=transl(-2,3,-0.02);
-kukarobot=Kuka16(kukabasetrans);
-hold on
-% 
+% kukabasetrans=transl(-2,3,-0.02);
+% kukarobot=Kuka16(kukabasetrans);
+% hold on
+
+
 robotbasetrans=transl(0.45,0.9,-0.02);
 robotbaserotate=trotz(pi/4);
 LinearUR3=LinearUR3(robotbasetrans*robotbaserotate);
 hold on
 
-q_linear_ur3 = [0, 0, 0, 0, 0, 0, 0, 0];
-LinearUR3.model.teach(q_linear_ur3);
 
 
 
@@ -168,210 +167,123 @@ LinearUR3.model.teach(q_linear_ur3);
 % axis auto
 
 
-% ------------ANIMATION FOR PROMO VIDEO-------------- %%
-%% Set up the Ball matrix
 
-Ball_Matrix = [
-    -3.2, 4, 0.23];
 
-% Plot the ball
-Ball = RobotCows(1);
 
-for id = 1:size(Ball_Matrix, 1)
-    Ball.cowModel{id}.base = SE3(Ball_Matrix(id,:)).T;
-    Ball.cowModel{id}.animate(0);
+%% RMRC
+% 1.1) Set parameters for the simulation
+kukabasetrans=transl(-2,3,-0.02);
+r=Kuka16(kukabasetrans);
+t = 4;             % Total time (s)
+deltaT = 0.05;      % Control frequency
+steps = t/deltaT;   % No. of steps for simulation
+epsilon = 0.1;      % Threshold value for manipulability/Damped Least Squares
+W = diag([1 1 1 0.1 0.1 0.1]);    % Weighting matrix for the velocity vector
+x1=transl([-0.232 3 0.656]);
+x2=transl([-2 1.232 0.656]);
+
+% 1.2) Allocate array data
+m = zeros(steps,1);             % Array for Measure of Manipulability
+qMatrix = zeros(steps,6);       % Array for joint anglesR
+qdot = zeros(steps,6);          % Array for joint velocities
+theta = zeros(3,steps);         % Array for roll-pitch-yaw angles
+x = zeros(3,steps);             % Array for x-y-z trajectory
+positionError = zeros(3,steps); % For plotting trajectory error
+angleError = zeros(3,steps);    % For plotting trajectory error
+
+% 1.3) Set up trajectory, initial pose
+s = lspb(0,1,steps);                                % Create interpolation scalar
+for i = 1:steps
+   x(:,i)=  transl(x1*(1-s(i)) + s(i)*x2);                  % Create trajectory in x-y plane
 end
 
-%% Move LinearUR3 to the desired end effector position
-% Define initial orientation
-roll_L = 0; pitch_L = 0; yaw_L = 0;
-initial_orientation_Linear = rpy2tr(roll_L, pitch_L, yaw_L);
+T = [rpy2r(theta(1,1),theta(2,1),theta(3,1)) x(:,1);zeros(1,3) 1];          % Create transformation of first point and angle
+q0 = zeros(1,6);                                                            % Initial guess for joint angles
+qMatrix(1,:) = r.model.ikcon(T,q0);                                            % Solve joint angles to achieve first waypoint
 
-%% -------- Edit this so that the LinearUR3 is facing the right way------%%
-
-linear_ur3_target = initial_orientation_Linear;
-q_linear_ur3 = [0, 0, -90, 0, -90, -127, 0, 0]; 
-LinearUR3.model.ikcon(linear_ur3_target);
-LinearUR3.model.animate(q_linear_ur3);
-drawnow;
-
-input('Press enter to continue');
-
-% Current pose of the robot
-q = zeros(1, kukarobot.model.n);
-
-% Define initial orientation
-roll = 0; pitch = -pi/2; yaw = 0;
-initial_orientation = rpy2tr(roll, pitch, yaw);
-
-%% Edit this so that the Desired locaiton in the matrix is aligned with the ball ----%%
-
-%% Step 1: Move to the Desired Location [-1, 1, 1] Where the ball is located
-desired_xyz = [-3.2,4,0.5];
-desired_pose = transl(desired_xyz) * initial_orientation;
-
-% Cartesian trajectory to the desired location
-T1 = SE3(kukarobot.model.fkine(q));
-T2 = SE3(desired_pose);
-q_traj_initial = generate_trajectory(kukarobot, T1, T2, 50, q);
-
-% Execute the trajectory to the ball without the ball
-execute_trajectory(kukarobot, q_traj_initial);
-
-% Calculate the forward kinematics for Kuka at the end of the initial trajectory
-T_kuka = kukarobot.model.fkine(q_traj_initial(end, :));
-
-%% Attach the ball to Kuka's end effector for the initial position
-update_ball_position(Ball, T_kuka);
-
-% input('Press enter to continue');
-
-%% Attach the ball to Kuka's end effector for the initial position
-update_ball_position(Ball, T_kuka);
-
-% input('Press enter to continue');
-
-% Compute the forward kinematics for Kuka at the end of the initial trajectory
-T_kuka = kukarobot.model.fkine(q_traj_initial(end, :));
-
-% Compute the forward kinematics for LinearUR3
-T_linear_ur3 = LinearUR3.model.fkine(q_linear_ur3);
-
-% Calculate the direction vector from Kuka to LinearUR3
-direction_vector = (transl(T_linear_ur3) - transl(T_kuka)) / norm(transl(T_linear_ur3) - transl(T_kuka));
-
-% Calculate the new orientation for Kuka's end effector to face LinearUR3
-R = look_at(direction_vector, [0, 0, 1]);
-
-% Compute the forward kinematics for LinearUR3 and Kuka
-T_linear_ur3 = LinearUR3.model.fkine(q_linear_ur3);
-T_kuka = kukarobot.model.fkine(q_traj_initial(end, :));
-
-% Calculate the end effector position of Kuka perpendicular to the plane of LinearUR3's end effector
-T_linear_ur3_translation = transl(T_linear_ur3);
-T_kuka_translation = transl(T_kuka);
-perpendicular_point = [T_linear_ur3_translation(1), T_linear_ur3_translation(2), T_kuka_translation(3)];
-
-% New pose with orientation looking at LinearUR3 and position parallel to its end effector plane
-parallel_pose = rt2tr(R, perpendicular_point);
-T3 = SE3(parallel_pose);
-q_traj_perpendicular = generate_trajectory(kukarobot, T2, T3, 30, q_traj_initial(end, :));
-
-%% Execute the trajectory from the ball to being perepndicular to the end effectory of the LinearUR3
-execute_trajectory_with_ball(kukarobot, q_traj_perpendicular, Ball, true)
-
-% input('Press enter to continue');
-
-%% Step 3: Throwing Motion
-% Parameters
-num_steps_windup = 80; % Number of steps for the wind-up motion
-num_steps_throw = 15; % Fewer steps will speed up the throw
-q_current = q_traj_perpendicular(1,1);
-
-% Wind-up joint configuration
-wind_up_joints = [q_current, -90, -90, 0, -45, 0];
-q_wind_up = deg2rad(wind_up_joints); % Convert to radians
-
-% Get the current joint angles
-q_current = q_traj_perpendicular(end, :);
-
-% Linear interpolation in joint space
-q_traj_windup = zeros(num_steps_windup, kukarobot.model.n);
-for i = 1:num_steps_windup
-    q_traj_windup(i, :) = (1 - i/num_steps_windup) * q_current + (i/num_steps_windup) * q_wind_up;
-end
-
-execute_trajectory_with_ball(kukarobot, q_traj_windup, Ball, true);
-
-% input('Press enter to continue');
-
-% After the wind-up motion, update T_kuka for the next calculations
-T_kuka = kukarobot.model.fkine(q_traj_windup(end, :));
-
-% Generate a faster throw trajectory by using fewer steps
-q_traj_throw = flipud(q_traj_windup(1:num_steps_throw, :));
-
-% Execute the throw trajectory with the ball attached, then detached
-detach_step = 15;  % Detach ball after this step
-execute_trajectory_with_ball(kukarobot, q_traj_throw(1:detach_step, :), Ball, true);
-execute_trajectory_with_ball(kukarobot, q_traj_throw(detach_step+1:end, :), Ball, false);
-
-
-%% Step 4: Move Ball from Kuka's end effector to LinearUR3's end effector
-%% Animate Ball from Kuka's End Effector to LinearUR3's End Effector
-
-% Ensure T_kuka is the final transformation of Kuka after all movements
-T_kuka_final = kukarobot.model.fkine(q_traj_throw(end, :));
-
-% Final position of the ball at Kuka's end effector (already calculated)
-start_position = transl(T_kuka_final);
-
-% Position of LinearUR3's end effector
-end_position = transl(T_linear_ur3);
-
-% Number of steps in the animation
-num_steps = 100;
-
-% Create a linear trajectory from start_position to end_position
-for i = 1:num_steps
-    % Linear interpolation
-    interp_position = start_position + (end_position - start_position) * (i / num_steps);
-
-    % Update the position of the ball
-    update_ball_position(Ball, transl(interp_position));
-
-    pause(0.02); % Pause for animation effect
-end
-
-
-%% -------------- Function to execute a trajectory ------------------%%
-function execute_trajectory(robot, q_traj)
-    for i = 1:size(q_traj, 1)
-        robot.model.animate(q_traj(i, :));
-        drawnow;
-        pause(0.02);
+% 1.4) Track the trajectory with RMRC
+for i = 1:steps-1
+    % UPDATE: fkine function now returns an SE3 object. To obtain the 
+    % Transform Matrix, access the variable in the object 'T' with '.T'.
+    T = r.model.fkine(qMatrix(i,:)).T;                                           % Get forward transformation at current joint state
+    deltaX = x(:,i+1) - T(1:3,4);                                         	% Get position error from next waypoint
+    Rd = rpy2r(theta(1,i+1),theta(2,i+1),theta(3,i+1));                     % Get next RPY angles, convert to rotation matrix
+    Ra = T(1:3,1:3);                                                        % Current end-effector rotation matrix
+    Rdot = (1/deltaT)*(Rd - Ra);                                                % Calculate rotation matrix error
+    S = Rdot*Ra';                                                           % Skew symmetric!
+    linear_velocity = (1/deltaT)*deltaX;
+    angular_velocity = [S(3,2);S(1,3);S(2,1)];                              % Check the structure of Skew Symmetric matrix!!
+    deltaTheta = tr2rpy(Rd*Ra');                                            % Convert rotation matrix to RPY angles
+    xdot = W*[linear_velocity;angular_velocity];                          	% Calculate end-effector velocity to reach next waypoint.
+    J = r.model.jacob0(qMatrix(i,:));                 % Get Jacobian at current joint state
+    m(i) = sqrt(det(J*J'));
+    if m(i) < epsilon  % If manipulability is less than given threshold
+        lambda = (1 - m(i)/epsilon)*5E-2;
+    else
+        lambda = 0;
     end
-end
-
-% Function to generate trajectory using ctraj
-function q_traj = generate_trajectory(robot, start_T, end_T, steps, initial_q)
-    ctraj_path = ctraj(start_T, end_T, steps);
-    q_traj = [];
-    for i = 1:size(ctraj_path, 3)
-        q_traj = [q_traj; robot.model.ikcon(ctraj_path(:,:,i), initial_q)];
-    end
-end
-
-%% -------------- Function to execute a trajectory ------------------%%
-function execute_trajectory_with_ball(robot, q_traj, Ball, update_ball)
-    for i = 1:size(q_traj, 1)
-        robot.model.animate(q_traj(i, :));
-        if update_ball
-            T_current = robot.model.fkine(q_traj(i, :));
-            update_ball_position(Ball, T_current);
+    invJ = inv(J'*J + lambda *eye(6))*J';                                   % DLS Inverse
+    qdot(i,:) = (invJ*xdot)';                                                % Solve the RMRC equation (you may need to transpose the         vector)
+    for j = 1:6                                                             % Loop through joints 1 to 6
+        if qMatrix(i,j) + deltaT*qdot(i,j) < r.model.qlim(j,1)                     % If next joint angle is lower than joint limit...
+            qdot(i,j) = 0; % Stop the motor
+        elseif qMatrix(i,j) + deltaT*qdot(i,j) > r.model.qlim(j,2)                 % If next joint angle is greater than joint limit ...
+            qdot(i,j) = 0; % Stop the motor
         end
-        drawnow;
-        pause(0.02);
     end
+    qMatrix(i+1,:) = qMatrix(i,:) + deltaT*qdot(i,:);                         	% Update next joint state based on joint velocities
+    positionError(:,i) = x(:,i+1) - T(1:3,4);                               % For plotting
+    angleError(:,i) = deltaTheta;                                           % For plotting
+    r.model.animate(qMatrix(i,:));
+    drawnow();
 end
 
 
-function R = look_at(direction, up)
-    z = direction(:) / norm(direction);
-    y = up(:) - z * dot(up(:), z);
-    y = y / norm(y);
-    x = cross(y, z);
-    R = [x y z];
+% 1.5) Plot the results
+tic
+
+figure(1)
+plot3(x(1,:),x(2,:),x(3,:),'k.','LineWidth',1)
+r.model.plot(qMatrix,'trail','r-')
+
+disp(['Plot took ', num2str(toc), 'seconds'])
+
+for i = 1:6
+    figure(2)
+    subplot(3,2,i)
+    plot(qMatrix(:,i),'k','LineWidth',1)
+    title(['Joint ', num2str(i)])
+    ylabel('Angle (rad)')
+    refline(0,r.model.qlim(i,1));
+    refline(0,r.model.qlim(i,2));
+
+    figure(3)
+    subplot(3,2,i)
+    plot(qdot(:,i),'k','LineWidth',1)
+    title(['Joint ',num2str(i)]);
+    ylabel('Velocity (rad/s)')
+    refline(0,0)
 end
 
-%% Function to update ball position based on Kuka's end effector
-function update_ball_position(Ball, T)
-    for id = 1:size(Ball.cowModel, 2)
-        Ball.cowModel{id}.base = T;
-        Ball.cowModel{id}.animate(0);
-    end
-    drawnow;
-end
+figure(4)
+subplot(2,1,1)
+plot(positionError'*1000,'LineWidth',1)
+refline(0,0)
+xlabel('Step')
+ylabel('Position Error (mm)')
+legend('X-Axis','Y-Axis','Z-Axis')
+
+subplot(2,1,2)
+plot(angleError','LineWidth',1)
+refline(0,0)
+xlabel('Step')
+ylabel('Angle Error (rad)')
+legend('Roll','Pitch','Yaw')
+figure(5)
+plot(m,'k','LineWidth',1)
+refline(0,epsilon)
+title('Manipulability')
+
 
 
 
