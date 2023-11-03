@@ -1,0 +1,105 @@
+% Initialize environment
+clear; close all; clc;
+
+%% Load enviornment
+enviornment();
+
+% Load the robot models
+robotbasetrans = transl(3, 3, 0);
+LinearUR3 = LinearUR3(robotbasetrans);
+kukarobot = Kuka16;
+
+hold on;
+axis auto;
+
+% Define the pin numbers
+EmergStopButton = 'D2';
+ReactivateButton = 'D4';
+EmergStopStatus = 'D8';
+LED1 = 'D9';
+LED2 = 'D10';
+PotentiometerPin = 'A0';
+
+% Create Arduino object
+a = arduino();
+
+% Initialize variables
+EmergStopButtonState = 0;
+ReactivateButtonState = 0;
+systemState = 0;
+potentiometerValue = 0;
+potentiometerEnabled = false;
+
+% ------------ANIMATION FOR PROMO VIDEO--------------
+% (Your animation setup code goes here)
+%% Set up the Ball matrix
+
+Ball_Matrix = [
+    -3.2, 4, 0.75];
+
+% Plot the ball
+Ball = RobotCows(1);
+
+for id = 1:size(Ball_Matrix, 1)
+    Ball.cowModel{id}.base = SE3(Ball_Matrix(id,:)).T;
+    Ball.cowModel{id}.animate(0);
+end
+
+% ...
+
+% ------------ Control System ------------
+
+while true
+    % Read button states and potentiometer value
+    EmergStopButtonState = readDigitalPin(a, EmergStopButton);
+    ReactivateButtonState = readDigitalPin(a, ReactivateButton);
+    potentiometerValue = readVoltage(a, PotentiometerPin) * 1023; % Scale to match Arduino analogRead()
+
+    % Emergency Stop pressed
+    if EmergStopButtonState == 1 && systemState == 2
+        writeDigitalPin(a, EmergStopStatus, 1);
+        writeDigitalPin(a, LED1, 1);
+        writeDigitalPin(a, LED2, 1);
+        systemState = 0;
+        potentiometerEnabled = false; % Disable potentiometer
+        disp('EMERGENCY STOP ON');
+    end
+
+    % Wait for Reactivate Button press
+    if systemState == 0 && ReactivateButtonState == 1
+        systemState = 1;
+        writeDigitalPin(a, LED1, 0);
+        potentiometerEnabled = true; % Enable potentiometer
+        disp('Stage 1 of Reactivation Complete, Please Complete Stage 2');
+        pause(0.1); % Debounce
+    end
+
+    % Reactivate the system with the potentiometer
+    if systemState == 1 && ReactivateButtonState == 0 && potentiometerEnabled && potentiometerValue >= 100
+        pause(0.1); % Debounce
+        if potentiometerValue >= 100
+            writeDigitalPin(a, EmergStopStatus, 0);
+            writeDigitalPin(a, LED1, 0);
+            writeDigitalPin(a, LED2, 0);
+            systemState = 2;
+            potentiometerEnabled = false; % Disable potentiometer
+            disp('Stage 2 Complete - System Reactivated');
+        end
+    end
+
+    % Check system state to control animation
+    if systemState == 2
+        % Execute animation code here
+        % (Your animation update code goes here)
+    else
+        % Handle animation pause or stop when not in the active state
+        % (e.g., pause or stop the animation loop)
+    end
+end
+
+% Clear the Arduino object
+clear a;
+
+
+
+
